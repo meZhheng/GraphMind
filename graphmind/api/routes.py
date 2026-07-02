@@ -32,6 +32,10 @@ async def agent_socket(websocket: WebSocket):
             "category": "session",
             "title": "Session started",
             "session_id": session.id,
+            "context": {
+                "current_tokens": session.current_context_tokens,
+                "max_tokens": session.agent.model.context_size,
+            },
         },
     )
 

@@ -4,15 +4,20 @@ from typing import Any
 from agentscope.event import (
     AgentEvent,
     DataBlockDeltaEvent,
+    DataBlockEndEvent,
+    DataBlockStartEvent,
     ExceedMaxItersEvent,
     ModelCallEndEvent,
     ModelCallStartEvent,
     RequireExternalExecutionEvent,
     RequireUserConfirmEvent,
     ReplyEndEvent,
+    ReplyStartEvent,
     TextBlockDeltaEvent,
+    TextBlockEndEvent,
     TextBlockStartEvent,
     ThinkingBlockDeltaEvent,
+    ThinkingBlockEndEvent,
     ThinkingBlockStartEvent,
     ToolCallDeltaEvent,
     ToolCallEndEvent,
@@ -40,10 +45,20 @@ def event_to_payload(event: AgentEvent) -> dict[str, Any]:
         "event": event.model_dump(mode="json", exclude_none=True),
     }
 
-    if isinstance(event, ModelCallStartEvent):
+    if isinstance(
+        event,
+        (
+            ReplyStartEvent,
+            TextBlockEndEvent,
+            ThinkingBlockEndEvent,
+            DataBlockStartEvent,
+            DataBlockEndEvent,
+        ),
+    ):
+        payload.update(category="internal")
+    elif isinstance(event, ModelCallStartEvent):
         payload.update(
-            category="model",
-            title=f"Model call: {event.model_name}",
+            category="internal",
         )
     elif isinstance(event, ModelCallEndEvent):
         payload.update(

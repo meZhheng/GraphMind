@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from agentscope.agent import Agent
 from agentscope.event import (
     ConfirmResult,
+    ModelCallEndEvent,
     RequireUserConfirmEvent,
     UserConfirmResultEvent,
 )
@@ -19,6 +20,7 @@ class AgentSession:
     id: str
     agent: Agent = field(default_factory=build_code_agent)
     pending_confirmation: RequireUserConfirmEvent | None = None
+    current_context_tokens: int = 0
 
     async def stream_task(self, content: str):
         self.pending_confirmation = None
@@ -62,7 +64,14 @@ class AgentSession:
     async def _stream_agent(self, next_input):
         confirmation_seen = False
         async for event in self.agent.reply_stream(next_input):
+            if isinstance(event, ModelCallEndEvent):
+                self.current_context_tokens = event.input_tokens
+
             payload = event_to_payload(event)
+            payload["context"] = {
+                "current_tokens": self.current_context_tokens,
+                "max_tokens": self.agent.model.context_size,
+            }
             yield payload
 
             if isinstance(event, RequireUserConfirmEvent):
