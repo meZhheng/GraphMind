@@ -17,19 +17,27 @@ pip install -r requirements.txt
 
 ## 启动 Agent Web 服务
 
+构建前端样式：
+
+```bash
+npm install
+npm run build:css
+```
+
 ```bash
 uvicorn graphmind.server.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 然后访问 http://127.0.0.1:8000。
 
-当前前端采用 Jinja2 模板 + 原生 JavaScript + WebSocket + Tailwind CDN：
+当前前端采用 Jinja2 模板 + 原生 JavaScript + WebSocket + 本地 Tailwind CLI：
 
 - 页面模板：`web/templates/`
-- 静态样式：`web/static/css/`
+- Tailwind 输入：`web/static/css/input.css`
+- Tailwind 输出：`web/static/dist/app.css`
 - 前端逻辑：`web/static/js/`
 
-WebSocket 是浏览器原生能力，不需要 React/Vue 等前端框架。后续如果要改成本地 Tailwind 构建，可以新增 `tailwind.config.js` 和 `package.json`，把 Tailwind CLI 输出写到 `web/static/dist/`，模板入口保持不变。
+WebSocket 是浏览器原生能力，不需要 React/Vue 等前端框架。开发样式时可运行 `npm run dev:css` 持续监听。
 
 ## 代码结构
 

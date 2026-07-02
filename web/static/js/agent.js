@@ -73,7 +73,16 @@ function handlePayload(payload) {
       appendStepText("reasoning", payload.content || "");
       break;
     case "act":
-      ensureStep(`act-${payload.tool_call_id}`, payload.title || "Tool call");
+      {
+        const note = consumeAssistantDraft();
+        const step = ensureStep(
+          `act-${payload.tool_call_id}`,
+          payload.title || "Tool call",
+        );
+        if (note) {
+          appendStepNote(step, note);
+        }
+      }
       actInputs.set(payload.tool_call_id, "");
       break;
     case "act_delta":
@@ -92,9 +101,13 @@ function handlePayload(payload) {
     case "confirm":
       pendingToolCalls = payload.tool_calls || [];
       renderConfirmation(payload);
-      appendStepText("approval", formatConfirmationSummary(pendingToolCalls), {
-        title: "Waiting for approval",
-      });
+      for (const toolCall of pendingToolCalls) {
+        appendStepText(
+          `approval-${toolCall.id}`,
+          `${toolCall.name}\n${toolCall.pretty_input || toolCall.input || "{}"}`,
+          { title: `Waiting for approval: ${toolCall.name}` },
+        );
+      }
       break;
     case "tool_response":
       ensureStep(
@@ -206,6 +219,16 @@ function appendAssistantText(text) {
   renderAssistantMarkdown(activeTurn);
 }
 
+function consumeAssistantDraft() {
+  const note = activeTurn.assistantRaw.trim();
+  if (!note) {
+    return "";
+  }
+  activeTurn.assistantRaw = "";
+  renderAssistantMarkdown(activeTurn);
+  return note;
+}
+
 function ensureStep(key, title) {
   let step = activeTurn.steps.get(key);
   if (step) {
@@ -216,6 +239,7 @@ function ensureStep(key, title) {
   item.className = "step-item";
   item.innerHTML = `
     <div class="step-title">${escapeHtml(title)}</div>
+    <div class="step-note hidden"></div>
     <pre class="step-body"></pre>
   `;
   activeTurn.stepsList.append(item);
@@ -224,6 +248,7 @@ function ensureStep(key, title) {
 
   step = {
     item,
+    note: item.querySelector(".step-note"),
     body: item.querySelector(".step-body"),
   };
   activeTurn.steps.set(key, step);
@@ -233,6 +258,12 @@ function ensureStep(key, title) {
 function appendStepText(key, text, options = {}) {
   const step = ensureStep(key, options.title || key);
   step.body.textContent += text;
+}
+
+function appendStepNote(step, text) {
+  step.item.dataset.kind = "note";
+  step.note.classList.remove("hidden");
+  step.note.textContent = text;
 }
 
 function appendSystemNotice(text) {
@@ -258,6 +289,7 @@ function finishTurn() {
     activeTurn.assistantRaw = "Done.";
   }
   renderAssistantMarkdown(activeTurn);
+  activeTurn.stepsPanel.open = false;
   isRunning = false;
   runBtn.disabled = false;
   activeTurn = null;
@@ -271,8 +303,8 @@ function renderConfirmation(payload) {
     const item = document.createElement("div");
     item.className = "confirm-call";
     item.innerHTML = `
-      <div class="text-sm font-medium text-amber-950">${escapeHtml(toolCall.name)}</div>
-      <pre class="mt-2 whitespace-pre-wrap break-words text-xs text-amber-950/80">${escapeHtml(toolCall.pretty_input || toolCall.input || "{}")}</pre>
+      <div class="confirm-call-title">${escapeHtml(toolCall.name)}</div>
+      <pre class="confirm-call-body">${escapeHtml(toolCall.pretty_input || toolCall.input || "{}")}</pre>
     `;
     confirmCalls.append(item);
   }
@@ -314,12 +346,6 @@ function setStatus(text) {
   mobileStatusEl.textContent = text;
 }
 
-function formatConfirmationSummary(toolCalls) {
-  return toolCalls
-    .map((call) => `${call.name}\n${call.pretty_input || call.input || "{}"}`)
-    .join("\n\n");
-}
-
 function formatContent(content) {
   if (content == null) {
     return "";
@@ -345,19 +371,142 @@ function renderAssistantMarkdown(turn) {
     return;
   }
 
-  if (window.marked) {
-    window.marked.setOptions({
-      breaks: true,
-      gfm: true,
-    });
-    const html = window.marked.parse(source);
-    turn.assistantText.innerHTML = window.DOMPurify
-      ? window.DOMPurify.sanitize(html)
-      : escapeHtml(source).replaceAll("\n", "<br>");
-    return;
+  turn.assistantText.innerHTML = renderMarkdown(source);
+}
+
+function renderMarkdown(source) {
+  const lines = source.replace(/\r\n/g, "\n").split("\n");
+  const blocks = [];
+  let paragraph = [];
+  let list = [];
+  let quote = [];
+  let code = [];
+  let inCode = false;
+
+  const flushParagraph = () => {
+    if (!paragraph.length) {
+      return;
+    }
+    blocks.push(`<p>${renderInlineMarkdown(paragraph.join(" "))}</p>`);
+    paragraph = [];
+  };
+
+  const flushList = () => {
+    if (!list.length) {
+      return;
+    }
+    blocks.push(
+      `<ul>${list.map((item) => `<li>${renderInlineMarkdown(item)}</li>`).join("")}</ul>`,
+    );
+    list = [];
+  };
+
+  const flushQuote = () => {
+    if (!quote.length) {
+      return;
+    }
+    blocks.push(`<blockquote>${renderInlineMarkdown(quote.join(" "))}</blockquote>`);
+    quote = [];
+  };
+
+  for (const line of lines) {
+    if (line.trim().startsWith("```")) {
+      if (inCode) {
+        blocks.push(`<pre><code>${escapeHtml(code.join("\n"))}</code></pre>`);
+        code = [];
+        inCode = false;
+      } else {
+        flushParagraph();
+        flushList();
+        flushQuote();
+        inCode = true;
+      }
+      continue;
+    }
+
+    if (inCode) {
+      code.push(line);
+      continue;
+    }
+
+    const trimmed = line.trim();
+    if (!trimmed) {
+      flushParagraph();
+      flushList();
+      flushQuote();
+      continue;
+    }
+
+    const heading = /^(#{1,3})\s+(.+)$/.exec(trimmed);
+    if (heading) {
+      flushParagraph();
+      flushList();
+      flushQuote();
+      const level = heading[1].length;
+      blocks.push(`<h${level}>${renderInlineMarkdown(heading[2])}</h${level}>`);
+      continue;
+    }
+
+    const unordered = /^[-*]\s+(.+)$/.exec(trimmed);
+    if (unordered) {
+      flushParagraph();
+      flushQuote();
+      list.push(unordered[1]);
+      continue;
+    }
+
+    const ordered = /^\d+\.\s+(.+)$/.exec(trimmed);
+    if (ordered) {
+      flushParagraph();
+      flushQuote();
+      list.push(ordered[1]);
+      continue;
+    }
+
+    const quoted = /^>\s?(.+)$/.exec(trimmed);
+    if (quoted) {
+      flushParagraph();
+      flushList();
+      quote.push(quoted[1]);
+      continue;
+    }
+
+    flushList();
+    flushQuote();
+    paragraph.push(trimmed);
   }
 
-  turn.assistantText.innerHTML = escapeHtml(source).replaceAll("\n", "<br>");
+  if (inCode) {
+    blocks.push(`<pre><code>${escapeHtml(code.join("\n"))}</code></pre>`);
+  }
+  flushParagraph();
+  flushList();
+  flushQuote();
+
+  return blocks.join("");
+}
+
+function renderInlineMarkdown(source) {
+  let html = escapeHtml(source);
+  const codeSpans = [];
+
+  html = html.replace(/`([^`]+)`/g, (_, code) => {
+    const token = `@@CODE_${codeSpans.length}@@`;
+    codeSpans.push(`<code>${code}</code>`);
+    return token;
+  });
+  html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  html = html.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+  html = html.replace(
+    /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,
+    '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>',
+  );
+  html = html.replace(
+    /@@CODE_(\d+)@@/g,
+    (_, index) => codeSpans[Number(index)] || "",
+  );
+
+  return html;
 }
 
 function compactTitle(title) {

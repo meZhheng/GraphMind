@@ -1,0 +1,640 @@
+@import "tailwindcss";
+
+@source "../../templates/**/*.html";
+@source "../js/**/*.js";
+
+:root {
+  color-scheme: light;
+  --bg: #f7f7f8;
+  --panel: #ffffff;
+  --text: #202123;
+  --muted: #71717a;
+  --muted-2: #a1a1aa;
+  --border: #e4e4e7;
+  --soft: #f4f4f5;
+  --bubble: #eeeeee;
+  --accent: #10a37f;
+  --warning: #f59e0b;
+}
+
+* {
+  box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: #d4d4d8 transparent;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "Helvetica Neue", Arial, sans-serif;
+}
+
+button,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.app-shell {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.sidebar {
+  display: flex;
+  width: 18rem;
+  flex: 0 0 auto;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.sidebar-header,
+.sidebar-footer {
+  border-bottom: 1px solid var(--border);
+  padding: 1rem;
+}
+
+.sidebar-footer {
+  border-top: 1px solid var(--border);
+  border-bottom: 0;
+  padding: 0.75rem;
+}
+
+.brand {
+  font-size: 1rem;
+  font-weight: 650;
+}
+
+.status,
+.mobile-context {
+  margin-top: 0.25rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.context-card {
+  border-bottom: 1px solid var(--border);
+  padding: 1rem;
+}
+
+.context-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.context-track {
+  height: 0.5rem;
+  margin-top: 0.5rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #f4f4f5;
+}
+
+.context-bar {
+  width: 0;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: width 160ms ease;
+}
+
+.turns-panel {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.75rem;
+}
+
+.panel-label {
+  margin: 0 0 0.5rem;
+  padding: 0 0.5rem;
+  color: var(--muted-2);
+  font-size: 0.75rem;
+  font-weight: 650;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.turns-nav {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.ghost-button,
+.mobile-clear {
+  width: 100%;
+  border: 0;
+  border-radius: 0.5rem;
+  background: transparent;
+  color: #52525b;
+  padding: 0.55rem 0.75rem;
+  text-align: left;
+  font-size: 0.875rem;
+}
+
+.ghost-button:hover,
+.mobile-clear:hover {
+  background: var(--soft);
+}
+
+.main-pane {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.mobile-header {
+  display: none;
+  height: 3.5rem;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  padding: 0 1rem;
+}
+
+.mobile-clear {
+  width: auto;
+  text-align: center;
+}
+
+.chat-scroll {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.conversation {
+  display: flex;
+  max-width: 48rem;
+  flex-direction: column;
+  gap: 2rem;
+  margin: 0 auto;
+  padding: 2rem 1rem;
+}
+
+.turn {
+  scroll-margin-top: 24px;
+}
+
+.message-row {
+  display: flex;
+  width: 100%;
+}
+
+.user-row {
+  justify-content: flex-end;
+}
+
+.assistant-row {
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.message-bubble {
+  max-width: min(100%, 42rem);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-break: anywhere;
+  font-size: 0.9375rem;
+  line-height: 1.7;
+}
+
+.user-bubble {
+  border-radius: 1.25rem;
+  background: var(--bubble);
+  color: var(--text);
+  padding: 0.75rem 1rem;
+}
+
+.assistant-bubble {
+  color: var(--text);
+  padding-top: 0.125rem;
+  white-space: normal;
+}
+
+.assistant-stack {
+  min-width: 0;
+  flex: 1;
+}
+
+.avatar {
+  display: flex;
+  width: 1.875rem;
+  height: 1.875rem;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--accent);
+  color: white;
+  font-size: 0.8125rem;
+  font-weight: 700;
+}
+
+.steps-panel {
+  margin-bottom: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  background: #fafafa;
+}
+
+.steps-panel > summary {
+  cursor: pointer;
+  padding: 0.625rem 0.75rem;
+  color: #52525b;
+  font-size: 0.8125rem;
+  font-weight: 550;
+  list-style-position: inside;
+}
+
+.steps-list {
+  display: grid;
+  gap: 0.5rem;
+  border-top: 1px solid var(--border);
+  padding: 0.75rem;
+}
+
+.step-item {
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: white;
+  padding: 0.625rem;
+}
+
+.step-item[data-kind="note"] {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
+.step-note {
+  margin-top: 0.5rem;
+  border-left: 3px solid #60a5fa;
+  border-radius: 0.35rem;
+  background: rgb(255 255 255 / 0.72);
+  padding: 0.5rem 0.65rem;
+  color: #1e3a8a;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-break: anywhere;
+}
+
+.step-title {
+  color: #3f3f46;
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+
+.step-body {
+  margin-top: 0.35rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-break: anywhere;
+  color: #52525b;
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    monospace;
+  font-size: 0.75rem;
+  line-height: 1.55;
+}
+
+.turn-meta {
+  margin-top: 0.5rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.turn-nav-item {
+  display: block;
+  width: 100%;
+  border: 0;
+  border-radius: 0.5rem;
+  background: transparent;
+  padding: 0.55rem 0.625rem;
+  text-align: left;
+  color: #3f3f46;
+  font-size: 0.875rem;
+}
+
+.turn-nav-item:hover {
+  background: var(--soft);
+}
+
+.confirm-panel {
+  border-top: 1px solid #fde68a;
+  background: #fffbeb;
+  padding: 0.75rem 1rem;
+}
+
+.confirm-inner {
+  max-width: 48rem;
+  margin: 0 auto;
+}
+
+.confirm-title {
+  color: #78350f;
+  font-size: 0.875rem;
+  font-weight: 650;
+}
+
+.confirm-calls {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.confirm-call {
+  border: 1px solid #fcd34d;
+  border-radius: 0.75rem;
+  background: white;
+  padding: 0.75rem;
+}
+
+.confirm-call-title {
+  color: #78350f;
+  font-size: 0.875rem;
+  font-weight: 650;
+}
+
+.confirm-call-body {
+  margin: 0.5rem 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-break: anywhere;
+  color: rgb(120 53 15 / 0.82);
+  font-size: 0.75rem;
+}
+
+.deny-button,
+.allow-button {
+  border-radius: 0.5rem;
+  padding: 0.55rem 1rem;
+  font-size: 0.875rem;
+}
+
+.deny-button {
+  border: 1px solid #fcd34d;
+  background: white;
+  color: #78350f;
+}
+
+.deny-button:hover {
+  background: #fef3c7;
+}
+
+.allow-button {
+  border: 1px solid var(--warning);
+  background: var(--warning);
+  color: white;
+  font-weight: 600;
+}
+
+.allow-button:hover {
+  background: #d97706;
+}
+
+.system-notice {
+  width: fit-content;
+  max-width: 42rem;
+  margin-inline: auto;
+  border-radius: 999px;
+  background: var(--soft);
+  color: #52525b;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8125rem;
+}
+
+.assistant-markdown {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-break: anywhere;
+}
+
+.assistant-markdown > :first-child {
+  margin-top: 0;
+}
+
+.assistant-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.assistant-markdown p,
+.assistant-markdown ul,
+.assistant-markdown ol,
+.assistant-markdown blockquote,
+.assistant-markdown pre,
+.assistant-markdown table {
+  margin-block: 0.75rem;
+}
+
+.assistant-markdown h1,
+.assistant-markdown h2,
+.assistant-markdown h3 {
+  margin: 1rem 0 0.5rem;
+  line-height: 1.3;
+  font-weight: 700;
+}
+
+.assistant-markdown h1 {
+  font-size: 1.35rem;
+}
+
+.assistant-markdown h2 {
+  font-size: 1.15rem;
+}
+
+.assistant-markdown h3 {
+  font-size: 1rem;
+}
+
+.assistant-markdown a {
+  color: #2563eb;
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+}
+
+.assistant-markdown ul,
+.assistant-markdown ol {
+  padding-left: 1.35rem;
+}
+
+.assistant-markdown ul {
+  list-style: disc;
+}
+
+.assistant-markdown ol {
+  list-style: decimal;
+}
+
+.assistant-markdown li + li {
+  margin-top: 0.25rem;
+}
+
+.assistant-markdown code {
+  border-radius: 0.35rem;
+  background: var(--soft);
+  padding: 0.12rem 0.32rem;
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    monospace;
+  font-size: 0.875em;
+}
+
+.assistant-markdown pre {
+  overflow-x: auto;
+  border-radius: 0.75rem;
+  background: #18181b;
+  padding: 0.875rem;
+  color: #f4f4f5;
+}
+
+.assistant-markdown pre code {
+  background: transparent;
+  padding: 0;
+  color: inherit;
+}
+
+.assistant-markdown blockquote {
+  border-left: 3px solid #d4d4d8;
+  padding-left: 0.9rem;
+  color: #52525b;
+}
+
+.assistant-markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.assistant-markdown th,
+.assistant-markdown td {
+  border: 1px solid var(--border);
+  padding: 0.45rem 0.55rem;
+  text-align: left;
+}
+
+.assistant-markdown th {
+  background: var(--soft);
+}
+
+.composer-area {
+  border-top: 1px solid var(--border);
+  background: white;
+  padding: 1rem;
+}
+
+.composer {
+  position: relative;
+  max-width: 48rem;
+  margin: 0 auto;
+  border: 1px solid #d4d4d8;
+  border-radius: 1rem;
+  background: white;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.08);
+}
+
+.composer:focus-within {
+  border-color: #a1a1aa;
+}
+
+.composer-input {
+  display: block;
+  width: 100%;
+  min-height: 3rem;
+  max-height: 12rem;
+  resize: none;
+  border: 0;
+  background: transparent;
+  color: #18181b;
+  outline: none;
+  padding: 0.75rem 3.5rem 0.75rem 1rem;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-break: anywhere;
+}
+
+.composer-input::placeholder {
+  color: #a1a1aa;
+}
+
+.composer-button {
+  position: absolute;
+  right: 0.5rem;
+  bottom: 0.5rem;
+  display: flex;
+  width: 2.25rem;
+  height: 2.25rem;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 999px;
+  background: #18181b;
+  color: white;
+}
+
+.composer-button:hover {
+  background: #3f3f46;
+}
+
+.composer-button:disabled {
+  background: #d4d4d8;
+}
+
+.composer-help {
+  max-width: 48rem;
+  margin: 0.5rem auto 0;
+  color: #a1a1aa;
+  text-align: center;
+  font-size: 0.75rem;
+}
+
+@media (max-width: 1023px) {
+  .sidebar {
+    display: none;
+  }
+
+  .mobile-header {
+    display: flex;
+  }
+}
