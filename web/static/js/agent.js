@@ -11,7 +11,7 @@ const confirmPanel = document.querySelector("#confirmPanel");
 const confirmCalls = document.querySelector("#confirmCalls");
 const allowBtn = document.querySelector("#allowBtn");
 const denyBtn = document.querySelector("#denyBtn");
-const turnsNav = document.querySelector("#turnsNav");
+const sessionsNav = document.querySelector("#sessionsNav");
 const contextLabel = document.querySelector("#contextLabel");
 const mobileContextLabel = document.querySelector("#mobileContextLabel");
 const contextBar = document.querySelector("#contextBar");
@@ -21,8 +21,11 @@ let pendingToolCalls = [];
 let turnCounter = 0;
 let activeTurn = null;
 let isRunning = false;
+let currentSessionId = "";
+let currentSessionStartedAt = "";
 
 const actInputs = new Map();
+const SESSION_HISTORY_KEY = "graphmind.sessionHistory";
 
 function connect() {
   const protocol = window.location.protocol === "https:" ? "wss" : "ws";
@@ -47,7 +50,16 @@ function handlePayload(payload) {
   updateContext(payload.context);
 
   if (payload.category === "session") {
+    currentSessionId = payload.session_id;
+    currentSessionStartedAt = new Date().toISOString();
     setStatus(`Session ${payload.session_id.slice(0, 8)}`);
+    upsertSessionHistory({
+      id: currentSessionId,
+      startedAt: currentSessionStartedAt,
+      updatedAt: currentSessionStartedAt,
+      turns: 0,
+      lastTask: "New session",
+    });
     return;
   }
 
@@ -180,7 +192,7 @@ function createTurn(title, userText) {
 
   wrapper.append(user, assistant);
   conversationEl.append(wrapper);
-  addTurnNav(turnId, title || `Round ${turnCounter}`);
+  window.GraphMindRounds?.addTurn(turnId, turnCounter);
 
   return {
     id: turnId,
@@ -192,20 +204,6 @@ function createTurn(title, userText) {
     meta: assistant.querySelector(".turn-meta"),
     steps: new Map(),
   };
-}
-
-function addTurnNav(turnId, title) {
-  const button = document.createElement("button");
-  button.className = "turn-nav-item";
-  button.type = "button";
-  button.textContent = `${turnCounter}. ${compactTitle(title)}`;
-  button.addEventListener("click", () => {
-    document.querySelector(`#${turnId}`)?.scrollIntoView({
-      behavior: "smooth",
-      block: "start",
-    });
-  });
-  turnsNav.append(button);
 }
 
 function ensureAssistantMessage() {
@@ -344,6 +342,75 @@ function updateContext(context) {
 function setStatus(text) {
   statusEl.textContent = text;
   mobileStatusEl.textContent = text;
+}
+
+function loadSessionHistory() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(SESSION_HISTORY_KEY) || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveSessionHistory(history) {
+  localStorage.setItem(
+    SESSION_HISTORY_KEY,
+    JSON.stringify(history.slice(0, 20)),
+  );
+}
+
+function upsertSessionHistory(update) {
+  if (!update.id) {
+    return;
+  }
+
+  const history = loadSessionHistory();
+  const existing = history.find((session) => session.id === update.id);
+  if (existing) {
+    Object.assign(existing, update);
+  } else {
+    history.unshift(update);
+  }
+  history.sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
+  saveSessionHistory(history);
+  renderSessionHistory();
+}
+
+function renderSessionHistory() {
+  if (!sessionsNav) {
+    return;
+  }
+
+  const history = loadSessionHistory();
+  sessionsNav.innerHTML = "";
+
+  if (!history.length) {
+    const empty = document.createElement("div");
+    empty.className = "session-empty";
+    empty.textContent = "No sessions yet";
+    sessionsNav.append(empty);
+    return;
+  }
+
+  for (const session of history) {
+    const item = document.createElement("button");
+    item.className = "session-item";
+    item.type = "button";
+    item.disabled = session.id !== currentSessionId;
+    item.classList.toggle("active", session.id === currentSessionId);
+    item.innerHTML = `
+      <span class="session-title">${escapeHtml(session.lastTask || "Untitled session")}</span>
+      <span class="session-meta">${escapeHtml(formatSessionMeta(session))}</span>
+    `;
+    sessionsNav.append(item);
+  }
+}
+
+function formatSessionMeta(session) {
+  const turns = session.turns || 0;
+  const id = session.id ? session.id.slice(0, 8) : "local";
+  return `${turns} round${turns === 1 ? "" : "s"} · ${id}`;
 }
 
 function formatContent(content) {
@@ -543,6 +610,13 @@ taskForm.addEventListener("submit", (event) => {
   runBtn.disabled = true;
   activeTurn = createTurn(content, content);
   actInputs.clear();
+  upsertSessionHistory({
+    id: currentSessionId,
+    startedAt: currentSessionStartedAt,
+    updatedAt: new Date().toISOString(),
+    turns: turnCounter,
+    lastTask: compactTitle(content),
+  });
   socket.send(
     JSON.stringify({
       type: "run",
@@ -555,12 +629,19 @@ taskForm.addEventListener("submit", (event) => {
 
 function clearConversation() {
   conversationEl.innerHTML = "";
-  turnsNav.innerHTML = "";
+  window.GraphMindRounds?.reset();
   confirmPanel.classList.add("hidden");
   pendingToolCalls = [];
   activeTurn = null;
   turnCounter = 0;
   actInputs.clear();
+  upsertSessionHistory({
+    id: currentSessionId,
+    startedAt: currentSessionStartedAt,
+    updatedAt: new Date().toISOString(),
+    turns: 0,
+    lastTask: "Cleared session",
+  });
 }
 
 clearBtn.addEventListener("click", clearConversation);
@@ -576,4 +657,5 @@ taskInput.addEventListener("keydown", (event) => {
 });
 
 runBtn.disabled = true;
+renderSessionHistory();
 connect();

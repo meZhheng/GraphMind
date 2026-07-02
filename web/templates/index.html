@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>GraphMind Agent</title>
     <link rel="stylesheet" href="/static/dist/app.css" />
+    <link rel="stylesheet" href="/static/css/rounds.css" />
   </head>
   <body class="min-h-screen bg-[#f7f7f8] text-[#202123] antialiased">
     <div class="app-shell">
@@ -24,9 +25,9 @@
           </div>
         </section>
 
-        <section class="turns-panel">
-          <div class="panel-label">Rounds</div>
-          <nav id="turnsNav" class="turns-nav"></nav>
+        <section class="sessions-panel">
+          <div class="panel-label">History sessions</div>
+          <nav id="sessionsNav" class="sessions-nav"></nav>
         </section>
 
         <div class="sidebar-footer">
@@ -88,8 +89,11 @@
           </p>
         </form>
       </main>
+
+      {% include "partials/rounds.html" %}
     </div>
 
+    <script src="/static/js/rounds.js"></script>
     <script src="/static/js/agent.js"></script>
   </body>
 </html>

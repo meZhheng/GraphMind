@@ -122,7 +122,7 @@ button:disabled {
   transition: width 160ms ease;
 }
 
-.turns-panel {
+.sessions-panel {
   min-height: 0;
   flex: 1;
   overflow-y: auto;
@@ -139,9 +139,47 @@ button:disabled {
   text-transform: uppercase;
 }
 
-.turns-nav {
+.sessions-nav {
   display: grid;
   gap: 0.25rem;
+}
+
+.session-item {
+  display: grid;
+  width: 100%;
+  gap: 0.2rem;
+  border: 0;
+  border-radius: 0.65rem;
+  background: transparent;
+  padding: 0.65rem 0.7rem;
+  text-align: left;
+}
+
+.session-item:hover:not(:disabled),
+.session-item.active {
+  background: var(--soft);
+}
+
+.session-item:disabled {
+  cursor: default;
+}
+
+.session-title {
+  overflow: hidden;
+  color: #3f3f46;
+  font-size: 0.875rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-meta,
+.session-empty {
+  color: var(--muted-2);
+  font-size: 0.75rem;
+}
+
+.session-empty {
+  padding: 0.65rem 0.7rem;
 }
 
 .ghost-button,
@@ -333,22 +371,6 @@ button:disabled {
   margin-top: 0.5rem;
   color: var(--muted);
   font-size: 0.75rem;
-}
-
-.turn-nav-item {
-  display: block;
-  width: 100%;
-  border: 0;
-  border-radius: 0.5rem;
-  background: transparent;
-  padding: 0.55rem 0.625rem;
-  text-align: left;
-  color: #3f3f46;
-  font-size: 0.875rem;
-}
-
-.turn-nav-item:hover {
-  background: var(--soft);
 }
 
 .confirm-panel {
