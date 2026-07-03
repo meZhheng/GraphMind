@@ -1,7 +1,12 @@
 {
   "scripts": {
+    "build": "npm run build:css && npm run build:vendor",
     "build:css": "tailwindcss -i ./web/static/css/input.css -o ./web/static/dist/app.css --minify",
+    "build:vendor": "node ./scripts/build-vendor.mjs",
     "dev:css": "tailwindcss -i ./web/static/css/input.css -o ./web/static/dist/app.css --watch"
+  },
+  "dependencies": {
+    "marked": "^16.4.1"
   },
   "devDependencies": {
     "@tailwindcss/cli": "^4.3.2",

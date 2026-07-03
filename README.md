@@ -34,7 +34,7 @@ MODEL_NAME=gpt-4o
 
 ```bash
 npm install
-npm run build:css
+npm run build
 ```
 
 启动服务：
@@ -50,9 +50,10 @@ uvicorn graphmind.server.main:app --reload --host 127.0.0.1 --port 8000
 - 页面模板：`web/templates/`
 - Tailwind 输入：`web/static/css/input.css`
 - Tailwind 输出：`web/static/dist/app.css`
+- 前端第三方依赖输出：`web/static/dist/marked.min.js`
 - 前端逻辑：`web/static/js/`
 
-WebSocket 是浏览器原生能力，不需要 React/Vue 等前端框架。开发样式时可运行 `npm run dev:css` 持续监听。
+WebSocket 是浏览器原生能力，不需要 React/Vue 等前端框架。Markdown 渲染使用 npm 管理的 `marked`，构建时复制到本地静态目录，页面不依赖 CDN。开发样式时可运行 `npm run dev:css` 持续监听。
 
 ## 代码结构
 

@@ -16,6 +16,11 @@ class AgentSessionStore:
         self._sessions[session.id] = session
         return session
 
+    def create_with_id(self, session_id: str) -> AgentSession:
+        session = AgentSession(id=session_id)
+        self._sessions[session.id] = session
+        return session
+
     def get(self, session_id: str | None) -> AgentSession | None:
         if not session_id:
             return None
@@ -28,4 +33,11 @@ class AgentSessionStore:
         session = self.get(session_id)
         if session is not None:
             return session, True
+        if session_id:
+            try:
+                uuid.UUID(session_id)
+            except ValueError:
+                pass
+            else:
+                return self.create_with_id(session_id), True
         return self.create(), False

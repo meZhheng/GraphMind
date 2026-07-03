@@ -18,6 +18,7 @@ build/
 dist/
 !web/static/dist/
 !web/static/dist/app.css
+!web/static/dist/marked.min.js
 
 # Environment variables and local secrets
 .env

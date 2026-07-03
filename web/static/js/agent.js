@@ -782,6 +782,87 @@ function renderAssistantMarkdown(turn) {
 }
 
 function renderMarkdown(source) {
+  if (window.marked?.parse) {
+    window.marked.setOptions({
+      breaks: true,
+      gfm: true,
+    });
+    return sanitizeMarkdownHtml(window.marked.parse(source));
+  }
+
+  return renderMarkdownFallback(source);
+}
+
+function sanitizeMarkdownHtml(html) {
+  const template = document.createElement("template");
+  template.innerHTML = html;
+  const allowedTags = new Set([
+    "A",
+    "BLOCKQUOTE",
+    "BR",
+    "CODE",
+    "DEL",
+    "EM",
+    "H1",
+    "H2",
+    "H3",
+    "H4",
+    "H5",
+    "H6",
+    "HR",
+    "LI",
+    "OL",
+    "P",
+    "PRE",
+    "STRONG",
+    "TABLE",
+    "TBODY",
+    "TD",
+    "TH",
+    "THEAD",
+    "TR",
+    "UL",
+  ]);
+  const allowedLinkProtocols = new Set(["http:", "https:", "mailto:"]);
+
+  const cleanNode = (node) => {
+    for (const child of [...node.childNodes]) {
+      if (child.nodeType === Node.ELEMENT_NODE) {
+        if (!allowedTags.has(child.tagName)) {
+          child.replaceWith(document.createTextNode(child.textContent || ""));
+          continue;
+        }
+
+        const originalHref = child.tagName === "A" ? child.getAttribute("href") : "";
+        for (const attr of [...child.attributes]) {
+          child.removeAttribute(attr.name);
+        }
+
+        if (child.tagName === "A") {
+          try {
+            if (!originalHref) {
+              continue;
+            }
+            const url = new URL(originalHref, window.location.origin);
+            if (allowedLinkProtocols.has(url.protocol)) {
+              child.setAttribute("href", originalHref);
+              child.setAttribute("target", "_blank");
+              child.setAttribute("rel", "noopener noreferrer");
+            }
+          } catch {
+            child.removeAttribute("href");
+          }
+        }
+      }
+      cleanNode(child);
+    }
+  };
+
+  cleanNode(template.content);
+  return template.innerHTML;
+}
+
+function renderMarkdownFallback(source) {
   const lines = source.replace(/\r\n/g, "\n").split("\n");
   const blocks = [];
   let paragraph = [];
