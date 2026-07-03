@@ -5,6 +5,8 @@ const chatScrollEl = document.querySelector("#chatScroll");
 const taskForm = document.querySelector("#taskForm");
 const taskInput = document.querySelector("#taskInput");
 const runBtn = document.querySelector("#runBtn");
+const newSessionBtn = document.querySelector("#newSessionBtn");
+const mobileNewSessionBtn = document.querySelector("#mobileNewSessionBtn");
 const clearBtn = document.querySelector("#clearBtn");
 const mobileClearBtn = document.querySelector("#mobileClearBtn");
 const confirmPanel = document.querySelector("#confirmPanel");
@@ -21,27 +23,41 @@ let pendingToolCalls = [];
 let turnCounter = 0;
 let activeTurn = null;
 let isRunning = false;
+let isConnected = false;
 let currentSessionId = "";
 let currentSessionStartedAt = "";
+let selectedSessionId = "";
 
 const actInputs = new Map();
 const SESSION_HISTORY_KEY = "graphmind.sessionHistory";
 
 function connect() {
   const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-  socket = new WebSocket(`${protocol}://${window.location.host}/ws/agent`);
+  const nextSocket = new WebSocket(`${protocol}://${window.location.host}/ws/agent`);
+  socket = nextSocket;
 
-  socket.addEventListener("open", () => {
+  nextSocket.addEventListener("open", () => {
+    if (socket !== nextSocket) {
+      return;
+    }
+    isConnected = true;
     setStatus("Connected");
-    runBtn.disabled = false;
+    refreshInputState();
   });
 
-  socket.addEventListener("close", () => {
+  nextSocket.addEventListener("close", () => {
+    if (socket !== nextSocket) {
+      return;
+    }
+    isConnected = false;
     setStatus("Disconnected");
-    runBtn.disabled = true;
+    refreshInputState();
   });
 
-  socket.addEventListener("message", (event) => {
+  nextSocket.addEventListener("message", (event) => {
+    if (socket !== nextSocket) {
+      return;
+    }
     handlePayload(JSON.parse(event.data));
   });
 }
@@ -51,15 +67,11 @@ function handlePayload(payload) {
 
   if (payload.category === "session") {
     currentSessionId = payload.session_id;
+    selectedSessionId = payload.session_id;
     currentSessionStartedAt = new Date().toISOString();
     setStatus(`Session ${payload.session_id.slice(0, 8)}`);
-    upsertSessionHistory({
-      id: currentSessionId,
-      startedAt: currentSessionStartedAt,
-      updatedAt: currentSessionStartedAt,
-      turns: 0,
-      lastTask: "New session",
-    });
+    renderSessionHistory();
+    refreshInputState();
     return;
   }
 
@@ -289,7 +301,8 @@ function finishTurn() {
   renderAssistantMarkdown(activeTurn);
   activeTurn.stepsPanel.open = false;
   isRunning = false;
-  runBtn.disabled = false;
+  persistCurrentSession();
+  refreshInputState();
   activeTurn = null;
 }
 
@@ -360,6 +373,33 @@ function saveSessionHistory(history) {
   );
 }
 
+function captureSnapshot() {
+  return {
+    html: conversationEl.innerHTML,
+    turns: turnCounter,
+  };
+}
+
+function persistCurrentSession(update = {}) {
+  if (!currentSessionId || turnCounter === 0) {
+    return;
+  }
+
+  upsertSessionHistory({
+    id: currentSessionId,
+    startedAt: currentSessionStartedAt,
+    updatedAt: new Date().toISOString(),
+    turns: turnCounter,
+    lastTask: update.lastTask || getCurrentSession()?.lastTask || "Current session",
+    snapshot: captureSnapshot(),
+    ...update,
+  });
+}
+
+function getCurrentSession() {
+  return loadSessionHistory().find((session) => session.id === currentSessionId);
+}
+
 function upsertSessionHistory(update) {
   if (!update.id) {
     return;
@@ -375,6 +415,65 @@ function upsertSessionHistory(update) {
   history.sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
   saveSessionHistory(history);
   renderSessionHistory();
+}
+
+function deleteSession(sessionId) {
+  const history = loadSessionHistory().filter(
+    (session) => session.id !== sessionId,
+  );
+  saveSessionHistory(history);
+
+  if (selectedSessionId === sessionId) {
+    clearConversationState();
+    selectedSessionId = currentSessionId;
+  }
+
+  if (currentSessionId === sessionId) {
+    reconnectForFreshSession();
+  }
+
+  renderSessionHistory();
+  refreshInputState();
+}
+
+function selectSession(sessionId) {
+  const session = loadSessionHistory().find((item) => item.id === sessionId);
+  if (!session) {
+    return;
+  }
+
+  if (selectedSessionId === currentSessionId) {
+    persistCurrentSession();
+  }
+
+  selectedSessionId = sessionId;
+  restoreSessionSnapshot(session);
+  setStatus(
+    sessionId === currentSessionId
+      ? `Session ${sessionId.slice(0, 8)}`
+      : `Viewing ${sessionId.slice(0, 8)}`,
+  );
+  renderSessionHistory();
+  refreshInputState();
+}
+
+function restoreSessionSnapshot(session) {
+  activeTurn = null;
+  pendingToolCalls = [];
+  confirmPanel.classList.add("hidden");
+  actInputs.clear();
+  conversationEl.innerHTML = session.snapshot?.html || "";
+  turnCounter = session.snapshot?.turns || session.turns || 0;
+  window.GraphMindRounds?.reset();
+
+  const turns = [...conversationEl.querySelectorAll(".turn")];
+  for (const [index, turn] of turns.entries()) {
+    if (!turn.id) {
+      turn.id = `turn-${index + 1}`;
+    }
+    window.GraphMindRounds?.addTurn(turn.id, index + 1);
+  }
+  scrollToBottom();
 }
 
 function renderSessionHistory() {
@@ -394,15 +493,23 @@ function renderSessionHistory() {
   }
 
   for (const session of history) {
-    const item = document.createElement("button");
+    const item = document.createElement("div");
     item.className = "session-item";
-    item.type = "button";
-    item.disabled = session.id !== currentSessionId;
-    item.classList.toggle("active", session.id === currentSessionId);
+    item.classList.toggle("active", session.id === selectedSessionId);
     item.innerHTML = `
-      <span class="session-title">${escapeHtml(session.lastTask || "Untitled session")}</span>
-      <span class="session-meta">${escapeHtml(formatSessionMeta(session))}</span>
+      <button class="session-open" type="button">
+        <span class="session-title">${escapeHtml(session.lastTask || "Untitled session")}</span>
+        <span class="session-meta">${escapeHtml(formatSessionMeta(session))}</span>
+      </button>
+      <button class="session-delete" type="button" aria-label="Delete session">&times;</button>
     `;
+    item.querySelector(".session-open").addEventListener("click", () => {
+      selectSession(session.id);
+    });
+    item.querySelector(".session-delete").addEventListener("click", (event) => {
+      event.stopPropagation();
+      deleteSession(session.id);
+    });
     sessionsNav.append(item);
   }
 }
@@ -411,6 +518,60 @@ function formatSessionMeta(session) {
   const turns = session.turns || 0;
   const id = session.id ? session.id.slice(0, 8) : "local";
   return `${turns} round${turns === 1 ? "" : "s"} · ${id}`;
+}
+
+function isViewingArchivedSession() {
+  return Boolean(selectedSessionId && selectedSessionId !== currentSessionId);
+}
+
+function refreshInputState() {
+  const archived = isViewingArchivedSession();
+  const ready = isConnected && Boolean(currentSessionId);
+  taskInput.disabled = archived || !ready;
+  taskInput.placeholder = archived
+    ? "Select the current session to continue chatting."
+    : "Message GraphMind...";
+  runBtn.disabled = !ready || isRunning || archived;
+  newSessionBtn.disabled = isRunning;
+  mobileNewSessionBtn.disabled = isRunning;
+  clearBtn.disabled = isRunning;
+  mobileClearBtn.disabled = isRunning;
+}
+
+function clearConversationState() {
+  conversationEl.innerHTML = "";
+  window.GraphMindRounds?.reset();
+  confirmPanel.classList.add("hidden");
+  pendingToolCalls = [];
+  activeTurn = null;
+  turnCounter = 0;
+  actInputs.clear();
+}
+
+function reconnectForFreshSession() {
+  currentSessionId = "";
+  currentSessionStartedAt = "";
+  selectedSessionId = "";
+  isConnected = false;
+  if (socket && socket.readyState !== WebSocket.CLOSED) {
+    socket.close();
+  }
+  connect();
+}
+
+function createNewSession() {
+  if (isRunning) {
+    return;
+  }
+
+  if (selectedSessionId === currentSessionId) {
+    persistCurrentSession();
+  }
+  clearConversationState();
+  setStatus("Starting new session...");
+  reconnectForFreshSession();
+  renderSessionHistory();
+  refreshInputState();
 }
 
 function formatContent(content) {
@@ -606,8 +767,18 @@ taskForm.addEventListener("submit", (event) => {
     return;
   }
 
+  if (isViewingArchivedSession()) {
+    return;
+  }
+
+  if (!currentSessionId || !socket || socket.readyState !== WebSocket.OPEN) {
+    setStatus("Connecting...");
+    refreshInputState();
+    return;
+  }
+
   isRunning = true;
-  runBtn.disabled = true;
+  refreshInputState();
   activeTurn = createTurn(content, content);
   actInputs.clear();
   upsertSessionHistory({
@@ -628,24 +799,20 @@ taskForm.addEventListener("submit", (event) => {
 });
 
 function clearConversation() {
-  conversationEl.innerHTML = "";
-  window.GraphMindRounds?.reset();
-  confirmPanel.classList.add("hidden");
-  pendingToolCalls = [];
-  activeTurn = null;
-  turnCounter = 0;
-  actInputs.clear();
-  upsertSessionHistory({
-    id: currentSessionId,
-    startedAt: currentSessionStartedAt,
-    updatedAt: new Date().toISOString(),
-    turns: 0,
-    lastTask: "Cleared session",
-  });
+  clearConversationState();
+  selectedSessionId = currentSessionId;
+  const history = loadSessionHistory().filter(
+    (session) => session.id !== currentSessionId,
+  );
+  saveSessionHistory(history);
+  renderSessionHistory();
+  refreshInputState();
 }
 
 clearBtn.addEventListener("click", clearConversation);
 mobileClearBtn.addEventListener("click", clearConversation);
+newSessionBtn.addEventListener("click", createNewSession);
+mobileNewSessionBtn.addEventListener("click", createNewSession);
 allowBtn.addEventListener("click", () => sendConfirmation(true));
 denyBtn.addEventListener("click", () => sendConfirmation(false));
 

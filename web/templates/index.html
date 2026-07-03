@@ -13,6 +13,10 @@
         <div class="sidebar-header">
           <div class="brand">GraphMind</div>
           <div id="status" class="status">Connecting...</div>
+          <button id="newSessionBtn" class="new-session-button" type="button">
+            <span aria-hidden="true">+</span>
+            New session
+          </button>
         </div>
 
         <section class="context-card">
@@ -44,9 +48,14 @@
             <div id="mobileStatus" class="status">Connecting...</div>
             <div id="mobileContextLabel" class="mobile-context">0 / 0 tokens</div>
           </div>
-          <button id="mobileClearBtn" class="mobile-clear" type="button">
-            Clear
-          </button>
+          <div class="mobile-actions">
+            <button id="mobileNewSessionBtn" class="mobile-clear" type="button">
+              New
+            </button>
+            <button id="mobileClearBtn" class="mobile-clear" type="button">
+              Clear
+            </button>
+          </div>
         </header>
 
         <section id="chatScroll" class="chat-scroll">

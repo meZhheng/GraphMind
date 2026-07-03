@@ -86,6 +86,31 @@ button:disabled {
   font-weight: 650;
 }
 
+.new-session-button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 0.6rem;
+  background: var(--panel);
+  color: #27272a;
+  padding: 0.6rem 0.75rem;
+  text-align: left;
+  font-size: 0.875rem;
+  font-weight: 550;
+}
+
+.new-session-button:hover {
+  background: var(--soft);
+}
+
+.new-session-button:disabled {
+  color: var(--muted-2);
+  background: #fafafa;
+}
+
 .status,
 .mobile-context {
   margin-top: 0.25rem;
@@ -146,22 +171,28 @@ button:disabled {
 
 .session-item {
   display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
   width: 100%;
   gap: 0.2rem;
-  border: 0;
   border-radius: 0.65rem;
   background: transparent;
-  padding: 0.65rem 0.7rem;
-  text-align: left;
+  padding: 0.2rem;
 }
 
-.session-item:hover:not(:disabled),
+.session-item:hover,
 .session-item.active {
   background: var(--soft);
 }
 
-.session-item:disabled {
-  cursor: default;
+.session-open {
+  display: grid;
+  min-width: 0;
+  gap: 0.2rem;
+  border: 0;
+  background: transparent;
+  padding: 0.45rem 0.5rem;
+  text-align: left;
 }
 
 .session-title {
@@ -180,6 +211,28 @@ button:disabled {
 
 .session-empty {
   padding: 0.65rem 0.7rem;
+}
+
+.session-delete {
+  width: 1.65rem;
+  height: 1.65rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted-2);
+  font-size: 1rem;
+  line-height: 1;
+  opacity: 0;
+}
+
+.session-item:hover .session-delete,
+.session-item.active .session-delete {
+  opacity: 1;
+}
+
+.session-delete:hover {
+  background: #fee2e2;
+  color: #b91c1c;
 }
 
 .ghost-button,
@@ -219,6 +272,11 @@ button:disabled {
 .mobile-clear {
   width: auto;
   text-align: center;
+}
+
+.mobile-actions {
+  display: flex;
+  gap: 0.35rem;
 }
 
 .chat-scroll {
