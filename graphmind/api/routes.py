@@ -1,15 +1,17 @@
-import uuid
+import logging
 
 from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
-from graphmind.agent.session import AgentSession
+from graphmind.agent.store import AgentSessionStore
 from graphmind.core.config import DEFAULT_TASK, TEMPLATES_DIR
 
 
 router = APIRouter()
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+session_store = AgentSessionStore()
+logger = logging.getLogger("uvicorn.error")
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -26,16 +28,18 @@ async def index(request: Request):
 @router.websocket("/ws/agent")
 async def agent_socket(websocket: WebSocket):
     await websocket.accept()
-    session = AgentSession(id=str(uuid.uuid4()))
+    requested_session_id = websocket.query_params.get("session_id")
+    session, restored = session_store.get_or_create(requested_session_id)
     await websocket.send_json(
         {
             "category": "session",
             "title": "Session started",
             "session_id": session.id,
-            "context": {
-                "current_tokens": session.current_context_tokens,
-                "max_tokens": session.agent.model.context_size,
-            },
+            "requested_session_id": requested_session_id,
+            "restored": restored,
+            "context": session.context_payload,
+            "pending_confirmation": session.pending_confirmation_payload,
+            "session_status": session.status_payload,
         },
     )
 
@@ -43,6 +47,12 @@ async def agent_socket(websocket: WebSocket):
         while True:
             message = await websocket.receive_json()
             message_type = message.get("type")
+            logger.info(
+                "session=%s websocket message=%s status=%s",
+                session.id,
+                message_type,
+                session.status_payload,
+            )
 
             if message_type == "run":
                 content = str(message.get("content", "")).strip()
@@ -75,4 +85,19 @@ async def agent_socket(websocket: WebSocket):
                 )
 
     except WebSocketDisconnect:
+        return
+    except Exception as exc:
+        logger.exception("agent websocket failed for session=%s", session.id)
+        try:
+            await websocket.send_json(
+                {
+                    "category": "error",
+                    "title": "WebSocket failed",
+                    "content": f"{exc.__class__.__name__}: {exc}",
+                    "context": session.context_payload,
+                    "session_status": session.status_payload,
+                },
+            )
+        except Exception:
+            pass
         return

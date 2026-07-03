@@ -11,8 +11,7 @@ const clearBtn = document.querySelector("#clearBtn");
 const mobileClearBtn = document.querySelector("#mobileClearBtn");
 const confirmPanel = document.querySelector("#confirmPanel");
 const confirmCalls = document.querySelector("#confirmCalls");
-const allowBtn = document.querySelector("#allowBtn");
-const denyBtn = document.querySelector("#denyBtn");
+const confirmSubmitBtn = document.querySelector("#confirmSubmitBtn");
 const sessionsNav = document.querySelector("#sessionsNav");
 const contextLabel = document.querySelector("#contextLabel");
 const mobileContextLabel = document.querySelector("#mobileContextLabel");
@@ -20,20 +19,31 @@ const contextBar = document.querySelector("#contextBar");
 
 let socket;
 let pendingToolCalls = [];
+let pendingToolDecisions = new Map();
 let turnCounter = 0;
 let activeTurn = null;
 let isRunning = false;
 let isConnected = false;
+let isAwaitingConfirmation = false;
 let currentSessionId = "";
 let currentSessionStartedAt = "";
 let selectedSessionId = "";
+let currentContext = {
+  current_tokens: 0,
+  max_tokens: 0,
+};
+let reconnectTimer = 0;
+let reconnectAttempts = 0;
 
 const actInputs = new Map();
 const SESSION_HISTORY_KEY = "graphmind.sessionHistory";
 
-function connect() {
+function connect(sessionId = "") {
   const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-  const nextSocket = new WebSocket(`${protocol}://${window.location.host}/ws/agent`);
+  const query = sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : "";
+  const nextSocket = new WebSocket(
+    `${protocol}://${window.location.host}/ws/agent${query}`,
+  );
   socket = nextSocket;
 
   nextSocket.addEventListener("open", () => {
@@ -41,6 +51,7 @@ function connect() {
       return;
     }
     isConnected = true;
+    reconnectAttempts = 0;
     setStatus("Connected");
     refreshInputState();
   });
@@ -49,9 +60,23 @@ function connect() {
     if (socket !== nextSocket) {
       return;
     }
+    const wasBusy = isRunning || isAwaitingConfirmation;
     isConnected = false;
+    isRunning = false;
+    isAwaitingConfirmation = false;
+    if (wasBusy) {
+      appendSystemNotice("Connection lost while the agent was working.");
+    }
     setStatus("Disconnected");
     refreshInputState();
+    scheduleReconnect();
+  });
+
+  nextSocket.addEventListener("error", () => {
+    if (socket !== nextSocket) {
+      return;
+    }
+    appendSystemNotice("WebSocket error. Please start a new session or reload.");
   });
 
   nextSocket.addEventListener("message", (event) => {
@@ -62,18 +87,59 @@ function connect() {
   });
 }
 
-function handlePayload(payload) {
-  updateContext(payload.context);
+function scheduleReconnect() {
+  if (!currentSessionId || reconnectTimer || reconnectAttempts >= 5) {
+    return;
+  }
+  reconnectAttempts += 1;
+  const delay = Math.min(4000, 500 * reconnectAttempts);
+  setStatus(`Reconnecting ${reconnectAttempts}/5...`);
+  reconnectTimer = window.setTimeout(() => {
+    reconnectTimer = 0;
+    if (!isConnected) {
+      connect(currentSessionId);
+    }
+  }, delay);
+}
 
+function handlePayload(payload) {
   if (payload.category === "session") {
+    const requestedSessionId = payload.requested_session_id || "";
+    const sessionRestored = Boolean(payload.restored);
     currentSessionId = payload.session_id;
+    currentSessionStartedAt =
+      getCurrentSession()?.startedAt || new Date().toISOString();
+
+    if (requestedSessionId && !sessionRestored) {
+      selectedSessionId = payload.session_id;
+      clearConversationState();
+      updateContext(payload.context);
+      applySessionStatus(payload.session_status);
+      appendSystemNotice(
+        `Previous session ${requestedSessionId.slice(0, 8)} expired. Started a new session.`,
+      );
+      setStatus(`Session ${payload.session_id.slice(0, 8)}`);
+      renderSessionHistory();
+      refreshInputState();
+      return;
+    }
+
     selectedSessionId = payload.session_id;
-    currentSessionStartedAt = new Date().toISOString();
-    setStatus(`Session ${payload.session_id.slice(0, 8)}`);
+    updateContext(payload.context);
+    applySessionStatus(payload.session_status);
+    restorePendingConfirmation(payload.pending_confirmation);
+    setStatus(
+      requestedSessionId && sessionRestored
+        ? `Restored ${payload.session_id.slice(0, 8)}`
+        : `Session ${payload.session_id.slice(0, 8)}`,
+    );
     renderSessionHistory();
     refreshInputState();
     return;
   }
+
+  updateContext(payload.context);
+  applySessionStatus(payload.session_status);
 
   if (payload.category === "internal" || payload.category === "event") {
     return;
@@ -124,6 +190,8 @@ function handlePayload(payload) {
       break;
     case "confirm":
       pendingToolCalls = payload.tool_calls || [];
+      isRunning = false;
+      isAwaitingConfirmation = pendingToolCalls.length > 0;
       renderConfirmation(payload);
       for (const toolCall of pendingToolCalls) {
         appendStepText(
@@ -132,6 +200,7 @@ function handlePayload(payload) {
           { title: `Waiting for approval: ${toolCall.name}` },
         );
       }
+      refreshInputState();
       break;
     case "tool_response":
       ensureStep(
@@ -155,10 +224,18 @@ function handlePayload(payload) {
       finishTurn();
       break;
     case "error":
+      if (payload.pending_confirmation) {
+        restorePendingConfirmation(payload.pending_confirmation);
+      }
       appendSystemNotice(payload.content || payload.title || "Error");
-      finishTurn();
+      if (!isAwaitingConfirmation) {
+        finishTurn();
+      }
       break;
     default:
+      if (payload.pending_confirmation) {
+        restorePendingConfirmation(payload.pending_confirmation);
+      }
       if (payload.title || payload.content) {
         appendStepText(
           `misc-${payload.category}`,
@@ -307,43 +384,121 @@ function finishTurn() {
 }
 
 function renderConfirmation(payload) {
+  if (!payload) {
+    return;
+  }
+  pendingToolCalls = payload.tool_calls || [];
+  pendingToolDecisions = new Map();
+  isAwaitingConfirmation = pendingToolCalls.length > 0;
   confirmPanel.classList.remove("hidden");
   confirmCalls.innerHTML = "";
 
   for (const toolCall of pendingToolCalls) {
     const item = document.createElement("div");
     item.className = "confirm-call";
-    item.innerHTML = `
-      <div class="confirm-call-title">${escapeHtml(toolCall.name)}</div>
-      <pre class="confirm-call-body">${escapeHtml(toolCall.pretty_input || toolCall.input || "{}")}</pre>
-    `;
+
+    const title = document.createElement("div");
+    title.className = "confirm-call-title";
+    title.textContent = toolCall.name;
+
+    const body = document.createElement("pre");
+    body.className = "confirm-call-body";
+    body.textContent = toolCall.pretty_input || toolCall.input || "{}";
+
+    const actions = document.createElement("div");
+    actions.className = "confirm-call-actions";
+
+    const allow = document.createElement("button");
+    allow.className = "decision-button allow-choice";
+    allow.type = "button";
+    allow.textContent = "Allow";
+    allow.addEventListener("click", () => {
+      setToolDecision(toolCall.id, true, item);
+    });
+
+    const deny = document.createElement("button");
+    deny.className = "decision-button deny-choice";
+    deny.type = "button";
+    deny.textContent = "Deny";
+    deny.addEventListener("click", () => {
+      setToolDecision(toolCall.id, false, item);
+    });
+
+    actions.append(allow, deny);
+    item.append(title, body, actions);
     confirmCalls.append(item);
   }
+  updateConfirmSubmitState();
 }
 
-function sendConfirmation(confirmed) {
+function applySessionStatus(status) {
+  if (!status) {
+    return;
+  }
+  isRunning = Boolean(status.is_running);
+  isAwaitingConfirmation = Boolean(status.is_awaiting_confirmation);
+}
+
+function restorePendingConfirmation(payload) {
+  if (!payload) {
+    isAwaitingConfirmation = false;
+    pendingToolCalls = [];
+    pendingToolDecisions = new Map();
+    confirmPanel.classList.add("hidden");
+    return;
+  }
+  renderConfirmation(payload);
+}
+
+function setToolDecision(toolCallId, confirmed, item) {
+  pendingToolDecisions.set(toolCallId, confirmed);
+  item.querySelector(".allow-choice")?.classList.toggle("selected", confirmed);
+  item.querySelector(".deny-choice")?.classList.toggle("selected", !confirmed);
+  updateConfirmSubmitState();
+}
+
+function updateConfirmSubmitState() {
+  confirmSubmitBtn.disabled =
+    !pendingToolCalls.length ||
+    pendingToolDecisions.size !== pendingToolCalls.length;
+}
+
+function sendConfirmation() {
   if (!pendingToolCalls.length) {
     return;
   }
+  if (pendingToolDecisions.size !== pendingToolCalls.length) {
+    appendSystemNotice("Choose Allow or Deny for every pending tool call.");
+    return;
+  }
 
+  isAwaitingConfirmation = false;
+  isRunning = true;
+  refreshInputState();
   socket.send(
     JSON.stringify({
       type: "confirm",
       results: pendingToolCalls.map((toolCall) => ({
         tool_call_id: toolCall.id,
-        confirmed,
+        confirmed: Boolean(pendingToolDecisions.get(toolCall.id)),
       })),
     }),
   );
 
   confirmPanel.classList.add("hidden");
   pendingToolCalls = [];
+  pendingToolDecisions = new Map();
+  updateConfirmSubmitState();
 }
 
 function updateContext(context) {
   if (!context) {
     return;
   }
+  currentContext = {
+    current_tokens: context.current_tokens || 0,
+    max_tokens: context.max_tokens || 0,
+  };
   const current = context.current_tokens || 0;
   const max = context.max_tokens || 0;
   contextLabel.textContent = `${formatNumber(current)} / ${formatNumber(max)}`;
@@ -377,6 +532,7 @@ function captureSnapshot() {
   return {
     html: conversationEl.innerHTML,
     turns: turnCounter,
+    context: currentContext,
   };
 }
 
@@ -392,6 +548,7 @@ function persistCurrentSession(update = {}) {
     turns: turnCounter,
     lastTask: update.lastTask || getCurrentSession()?.lastTask || "Current session",
     snapshot: captureSnapshot(),
+    context: currentContext,
     ...update,
   });
 }
@@ -436,6 +593,18 @@ function deleteSession(sessionId) {
   refreshInputState();
 }
 
+function reconnectToSession(sessionId) {
+  isConnected = false;
+  if (reconnectTimer) {
+    window.clearTimeout(reconnectTimer);
+    reconnectTimer = 0;
+  }
+  if (socket && socket.readyState !== WebSocket.CLOSED) {
+    socket.close();
+  }
+  connect(sessionId);
+}
+
 function selectSession(sessionId) {
   const session = loadSessionHistory().find((item) => item.id === sessionId);
   if (!session) {
@@ -448,11 +617,12 @@ function selectSession(sessionId) {
 
   selectedSessionId = sessionId;
   restoreSessionSnapshot(session);
-  setStatus(
-    sessionId === currentSessionId
-      ? `Session ${sessionId.slice(0, 8)}`
-      : `Viewing ${sessionId.slice(0, 8)}`,
-  );
+  if (sessionId === currentSessionId) {
+    setStatus(`Session ${sessionId.slice(0, 8)}`);
+  } else {
+    setStatus(`Opening ${sessionId.slice(0, 8)}`);
+    reconnectToSession(sessionId);
+  }
   renderSessionHistory();
   refreshInputState();
 }
@@ -464,6 +634,7 @@ function restoreSessionSnapshot(session) {
   actInputs.clear();
   conversationEl.innerHTML = session.snapshot?.html || "";
   turnCounter = session.snapshot?.turns || session.turns || 0;
+  updateContext(session.snapshot?.context || session.context);
   window.GraphMindRounds?.reset();
 
   const turns = [...conversationEl.querySelectorAll(".turn")];
@@ -527,11 +698,13 @@ function isViewingArchivedSession() {
 function refreshInputState() {
   const archived = isViewingArchivedSession();
   const ready = isConnected && Boolean(currentSessionId);
-  taskInput.disabled = archived || !ready;
-  taskInput.placeholder = archived
-    ? "Select the current session to continue chatting."
-    : "Message GraphMind...";
-  runBtn.disabled = !ready || isRunning || archived;
+  taskInput.disabled = archived || !ready || isAwaitingConfirmation;
+  taskInput.placeholder = isAwaitingConfirmation
+    ? "Approve or deny the pending tool call first."
+    : archived
+      ? "Select the current session to continue chatting."
+      : "Message GraphMind...";
+  runBtn.disabled = !ready || isRunning || archived || isAwaitingConfirmation;
   newSessionBtn.disabled = isRunning;
   mobileNewSessionBtn.disabled = isRunning;
   clearBtn.disabled = isRunning;
@@ -543,6 +716,8 @@ function clearConversationState() {
   window.GraphMindRounds?.reset();
   confirmPanel.classList.add("hidden");
   pendingToolCalls = [];
+  pendingToolDecisions = new Map();
+  isAwaitingConfirmation = false;
   activeTurn = null;
   turnCounter = 0;
   actInputs.clear();
@@ -553,6 +728,10 @@ function reconnectForFreshSession() {
   currentSessionStartedAt = "";
   selectedSessionId = "";
   isConnected = false;
+  if (reconnectTimer) {
+    window.clearTimeout(reconnectTimer);
+    reconnectTimer = 0;
+  }
   if (socket && socket.readyState !== WebSocket.CLOSED) {
     socket.close();
   }
@@ -787,6 +966,8 @@ taskForm.addEventListener("submit", (event) => {
     updatedAt: new Date().toISOString(),
     turns: turnCounter,
     lastTask: compactTitle(content),
+    context: currentContext,
+    snapshot: captureSnapshot(),
   });
   socket.send(
     JSON.stringify({
@@ -813,8 +994,7 @@ clearBtn.addEventListener("click", clearConversation);
 mobileClearBtn.addEventListener("click", clearConversation);
 newSessionBtn.addEventListener("click", createNewSession);
 mobileNewSessionBtn.addEventListener("click", createNewSession);
-allowBtn.addEventListener("click", () => sendConfirmation(true));
-denyBtn.addEventListener("click", () => sendConfirmation(false));
+confirmSubmitBtn.addEventListener("click", sendConfirmation);
 
 taskInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && !event.shiftKey) {

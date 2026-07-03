@@ -484,32 +484,56 @@ button:disabled {
   font-size: 0.75rem;
 }
 
-.deny-button,
-.allow-button {
-  border-radius: 0.5rem;
-  padding: 0.55rem 1rem;
-  font-size: 0.875rem;
+.confirm-call-actions {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.65rem;
 }
 
-.deny-button {
+.decision-button {
   border: 1px solid #fcd34d;
+  border-radius: 0.5rem;
   background: white;
   color: #78350f;
+  padding: 0.45rem 0.75rem;
+  font-size: 0.8125rem;
+  font-weight: 550;
 }
 
-.deny-button:hover {
+.decision-button:hover {
   background: #fef3c7;
+}
+
+.allow-choice.selected {
+  border-color: #059669;
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.deny-choice.selected {
+  border-color: #dc2626;
+  background: #fee2e2;
+  color: #991b1b;
 }
 
 .allow-button {
   border: 1px solid var(--warning);
+  border-radius: 0.5rem;
   background: var(--warning);
   color: white;
+  padding: 0.55rem 1rem;
+  font-size: 0.875rem;
   font-weight: 600;
 }
 
 .allow-button:hover {
   background: #d97706;
+}
+
+.allow-button:disabled {
+  border-color: #f3f4f6;
+  background: #e5e7eb;
+  color: #9ca3af;
 }
 
 .system-notice {

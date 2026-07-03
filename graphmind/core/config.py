@@ -11,7 +11,8 @@ WEB_ROOT = PROJECT_ROOT / "web"
 TEMPLATES_DIR = WEB_ROOT / "templates"
 STATIC_DIR = WEB_ROOT / "static"
 
-FILE_RELATED_TOOLS = ("Read", "Write", "Edit", "Glob", "Grep", "Bash")
+FILE_READ_TOOLS = ("Read", "Glob", "Grep")
+FILE_MUTATION_TOOLS = ("Write", "Edit")
 DEFAULT_TASK = (
     "请在项目根目录创建一个 README.md 文件，"
     "不要把整份 README 包在 Markdown 代码块里。"

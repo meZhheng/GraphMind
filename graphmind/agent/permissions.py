@@ -6,7 +6,11 @@ from agentscope.permission import (
 )
 from agentscope.state import AgentState
 
-from graphmind.core.config import FILE_RELATED_TOOLS, PROJECT_ROOT
+from graphmind.core.config import (
+    FILE_MUTATION_TOOLS,
+    FILE_READ_TOOLS,
+    PROJECT_ROOT,
+)
 
 
 def configure_human_in_loop_permissions(state: AgentState) -> None:
@@ -18,7 +22,17 @@ def configure_human_in_loop_permissions(state: AgentState) -> None:
         )
     )
 
-    for tool_name in FILE_RELATED_TOOLS:
+    for tool_name in FILE_READ_TOOLS:
+        state.permission_context.allow_rules.setdefault(tool_name, []).append(
+            PermissionRule(
+                tool_name=tool_name,
+                rule_content=None,
+                behavior=PermissionBehavior.ALLOW,
+                source="default-read-access",
+            ),
+        )
+
+    for tool_name in FILE_MUTATION_TOOLS:
         state.permission_context.ask_rules.setdefault(tool_name, []).append(
             PermissionRule(
                 tool_name=tool_name,
