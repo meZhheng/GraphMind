@@ -28,6 +28,15 @@ class LLMSettings:
     timeout: float = 60.0
     temperature: float = 0.2
     max_tokens: int = 1024
+    context_size: int = 128000
+
+
+@dataclass(frozen=True)
+class ContextCompressionSettings:
+    enabled: bool = True
+    trigger_ratio: float = 0.8
+    reserve_ratio: float = 0.2
+    tool_result_limit: int = 50000
 
 
 def load_env(path: Path = ENV_PATH) -> None:
@@ -51,4 +60,45 @@ def get_llm_settings() -> LLMSettings:
         timeout=float(os.getenv("OPENAI_TIMEOUT", "60")),
         temperature=float(os.getenv("MODEL_TEMPERATURE", "0.2")),
         max_tokens=int(os.getenv("MODEL_MAX_TOKENS", "1024")),
+        context_size=int(os.getenv("MODEL_CONTEXT_SIZE", "128000")),
     )
+
+
+def get_context_compression_settings() -> ContextCompressionSettings:
+    load_env()
+
+    enabled = _env_bool("CONTEXT_COMPRESSION_ENABLED", True)
+    trigger_ratio = float(os.getenv("CONTEXT_COMPRESSION_TRIGGER_RATIO", "0.8"))
+    reserve_ratio = float(os.getenv("CONTEXT_COMPRESSION_RESERVE_RATIO", "0.2"))
+    tool_result_limit = int(
+        os.getenv("CONTEXT_COMPRESSION_TOOL_RESULT_LIMIT", "50000"),
+    )
+
+    if not 0 < trigger_ratio < 0.9:
+        raise RuntimeError(
+            "CONTEXT_COMPRESSION_TRIGGER_RATIO must be greater than 0 and "
+            "less than 0.9",
+        )
+    if not 0 < reserve_ratio < trigger_ratio:
+        raise RuntimeError(
+            "CONTEXT_COMPRESSION_RESERVE_RATIO must be greater than 0 and "
+            "less than CONTEXT_COMPRESSION_TRIGGER_RATIO",
+        )
+    if tool_result_limit <= 0:
+        raise RuntimeError(
+            "CONTEXT_COMPRESSION_TOOL_RESULT_LIMIT must be greater than 0",
+        )
+
+    return ContextCompressionSettings(
+        enabled=enabled,
+        trigger_ratio=trigger_ratio,
+        reserve_ratio=reserve_ratio,
+        tool_result_limit=tool_result_limit,
+    )
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}

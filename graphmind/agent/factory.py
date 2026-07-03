@@ -1,12 +1,19 @@
-from agentscope.agent import Agent, ReActConfig
+from agentscope.agent import Agent, ContextConfig, ReActConfig
 from agentscope.credential import OpenAICredential
 from agentscope.model import OpenAIChatModel
 from agentscope.state import AgentState
 from agentscope.tool import Bash, Edit, Glob, Grep, Read, Toolkit, Write
 
-from graphmind.agent.middleware import ToolCallArgumentSanitizer
+from graphmind.agent.middleware import (
+    ContextCompressionSwitch,
+    ToolCallArgumentSanitizer,
+)
 from graphmind.agent.permissions import configure_human_in_loop_permissions
-from graphmind.core.config import PROJECT_ROOT, get_llm_settings
+from graphmind.core.config import (
+    PROJECT_ROOT,
+    get_context_compression_settings,
+    get_llm_settings,
+)
 
 
 def build_model() -> OpenAIChatModel:
@@ -20,6 +27,7 @@ def build_model() -> OpenAIChatModel:
         model=settings.model_name,
         stream=True,
         client_kwargs={"timeout": settings.timeout},
+        context_size=settings.context_size,
         parameters=OpenAIChatModel.Parameters(
             temperature=settings.temperature,
             max_tokens=settings.max_tokens,
@@ -40,9 +48,22 @@ def build_toolkit() -> Toolkit:
     )
 
 
+def build_context_config() -> ContextConfig:
+    settings = get_context_compression_settings()
+    return ContextConfig(
+        trigger_ratio=settings.trigger_ratio,
+        reserve_ratio=settings.reserve_ratio,
+        tool_result_limit=settings.tool_result_limit,
+    )
+
+
 def build_code_agent() -> Agent:
     state = AgentState()
     configure_human_in_loop_permissions(state)
+    compression_settings = get_context_compression_settings()
+    state.middle_context["context_compression_enabled"] = (
+        compression_settings.enabled
+    )
 
     return Agent(
         name="coding_agent",
@@ -56,6 +77,10 @@ def build_code_agent() -> Agent:
         model=build_model(),
         toolkit=build_toolkit(),
         state=state,
-        middlewares=[ToolCallArgumentSanitizer()],
+        middlewares=[
+            ContextCompressionSwitch(enabled=compression_settings.enabled),
+            ToolCallArgumentSanitizer(),
+        ],
+        context_config=build_context_config(),
         react_config=ReActConfig(max_iters=15),
     )

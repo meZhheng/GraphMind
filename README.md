@@ -26,7 +26,18 @@ pip install -r requirements.txt
 OPENAI_API_BASE=https://api.openai.com/v1
 OPENAI_API_KEY=your_api_key
 MODEL_NAME=gpt-4o
+MODEL_CONTEXT_SIZE=128000
+CONTEXT_COMPRESSION_ENABLED=true
+CONTEXT_COMPRESSION_TRIGGER_RATIO=0.8
+CONTEXT_COMPRESSION_RESERVE_RATIO=0.2
+CONTEXT_COMPRESSION_TOOL_RESULT_LIMIT=50000
 ```
+
+上下文压缩基于 AgentScope 内置 `ContextConfig`。当输入上下文 token 数超过
+`MODEL_CONTEXT_SIZE * CONTEXT_COMPRESSION_TRIGGER_RATIO` 时，agent 会把较早
+的对话压缩为 summary，并保留最近
+`MODEL_CONTEXT_SIZE * CONTEXT_COMPRESSION_RESERVE_RATIO` 的上下文继续推理。
+`MODEL_CONTEXT_SIZE` 应与 vLLM 部署时实际可用上下文窗口保持一致。
 
 ## 启动 Agent Web 服务
 
@@ -40,10 +51,10 @@ npm run build
 启动服务：
 
 ```bash
-uvicorn graphmind.server.main:app --reload --host 127.0.0.1 --port 8000
+uvicorn graphmind.server.main:app --reload --host 127.0.0.1 --port 5277
 ```
 
-然后访问 http://127.0.0.1:8000。
+然后访问 http://127.0.0.1:5277。
 
 当前前端采用 Jinja2 模板 + 原生 JavaScript + WebSocket + 本地 Tailwind CLI：
 

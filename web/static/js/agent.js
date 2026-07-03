@@ -16,6 +16,9 @@ const sessionsNav = document.querySelector("#sessionsNav");
 const contextLabel = document.querySelector("#contextLabel");
 const mobileContextLabel = document.querySelector("#mobileContextLabel");
 const contextBar = document.querySelector("#contextBar");
+const contextDetails = document.querySelector("#contextDetails");
+const contextReserveMarker = document.querySelector("#contextReserveMarker");
+const contextTriggerMarker = document.querySelector("#contextTriggerMarker");
 
 let socket;
 let pendingToolCalls = [];
@@ -220,6 +223,15 @@ function handlePayload(payload) {
     case "usage":
       updateTurnMeta(payload.content);
       break;
+    case "compression_start":
+      renderCompressionStart(payload.content || {});
+      break;
+    case "compression_end":
+      renderCompressionEnd(payload.content || {});
+      break;
+    case "compression_error":
+      renderCompressionError(payload.content || {});
+      break;
     case "done":
       finishTurn();
       break;
@@ -335,6 +347,7 @@ function ensureStep(key, title) {
 
   step = {
     item,
+    title: item.querySelector(".step-title"),
     note: item.querySelector(".step-note"),
     body: item.querySelector(".step-body"),
   };
@@ -345,6 +358,12 @@ function ensureStep(key, title) {
 function appendStepText(key, text, options = {}) {
   const step = ensureStep(key, options.title || key);
   step.body.textContent += text;
+}
+
+function setStepText(key, text, options = {}) {
+  const step = ensureStep(key, options.title || key);
+  step.body.textContent = text;
+  return step;
 }
 
 function appendStepNote(step, text) {
@@ -365,6 +384,83 @@ function updateTurnMeta(usage) {
     return;
   }
   activeTurn.meta.textContent = `Input ${usage.input_tokens ?? 0} tokens · Output ${usage.output_tokens ?? 0} tokens`;
+}
+
+function renderCompressionStart(content) {
+  const step = setStepText(
+    "context-compression",
+    formatCompressionDetails(content, "Compressing earlier context..."),
+    { title: "Context compression" },
+  );
+  step.item.dataset.kind = "compression";
+  step.item.classList.add("is-running");
+  appendStepNote(
+    step,
+    "Current context reached the configured compression trigger. Earlier conversation is being summarized before the next model call.",
+  );
+}
+
+function renderCompressionEnd(content) {
+  const step = setStepText(
+    "context-compression",
+    formatCompressionDetails(content, "Compression finished."),
+    { title: "Context compression" },
+  );
+  step.item.dataset.kind = "compression";
+  step.item.classList.remove("is-running");
+  appendStepNote(
+    step,
+    "The next model call uses the generated summary plus the reserved recent context.",
+  );
+}
+
+function renderCompressionError(content) {
+  const step = setStepText(
+    "context-compression",
+    formatCompressionDetails(content, "Compression failed."),
+    { title: "Context compression" },
+  );
+  step.item.dataset.kind = "compression-error";
+  step.item.classList.remove("is-running");
+  appendStepNote(step, content.error || "Context compression failed.");
+}
+
+function formatCompressionDetails(content, status) {
+  const lines = [
+    `Status: ${status}`,
+    `Estimated context: ${formatNumber(content.estimated_tokens ?? content.before_tokens ?? 0)} tokens`,
+    `Trigger threshold: ${formatNumber(content.trigger_tokens || 0)} tokens (${formatPercent(content.trigger_ratio)})`,
+    `Reserve target: ${formatNumber(content.reserve_tokens || 0)} tokens (${formatPercent(content.reserve_ratio)})`,
+  ];
+
+  if (content.before_tokens != null || content.after_tokens != null) {
+    lines.push(
+      `Before / after: ${formatNumber(content.before_tokens || 0)} -> ${formatNumber(content.after_tokens || 0)} tokens`,
+    );
+  }
+  if (content.changed != null) {
+    lines.push(`Changed context: ${content.changed ? "yes" : "no"}`);
+  }
+  if (content.message_count != null) {
+    lines.push(`Messages considered: ${formatNumber(content.message_count)}`);
+  }
+  if (content.compressed_messages != null) {
+    lines.push(`Compressed messages: ${formatNumber(content.compressed_messages)}`);
+  }
+  if (content.reserved_messages != null) {
+    lines.push(`Reserved messages: ${formatNumber(content.reserved_messages)}`);
+  }
+  if (content.summary_chars != null) {
+    lines.push(`Summary length: ${formatNumber(content.summary_chars)} chars`);
+  }
+  if (content.duration_ms != null) {
+    lines.push(`Duration: ${formatNumber(content.duration_ms)} ms`);
+  }
+  if (content.error) {
+    lines.push(`Error: ${content.error}`);
+  }
+
+  return lines.join("\n");
 }
 
 function finishTurn() {
@@ -501,10 +597,42 @@ function updateContext(context) {
   };
   const current = context.current_tokens || 0;
   const max = context.max_tokens || 0;
+  const compression = context.compression || {};
+  const triggerTokens = compression.trigger_tokens || 0;
+  const reserveTokens = compression.reserve_tokens || 0;
+  const lastInputTokens = context.last_model_input_tokens || 0;
   contextLabel.textContent = `${formatNumber(current)} / ${formatNumber(max)}`;
   mobileContextLabel.textContent = `${formatNumber(current)} / ${formatNumber(max)} tokens`;
+  const compressionStatus = compression.enabled
+    ? [
+        "Compression on",
+        `reserve ${formatNumber(reserveTokens)}`,
+        `trigger ${formatNumber(triggerTokens)}`,
+        `last model input ${formatNumber(lastInputTokens)}`,
+      ].join(" · ")
+    : "Compression off";
+  contextLabel.title = compressionStatus;
+  mobileContextLabel.title = compressionStatus;
   const pct = max > 0 ? Math.min(100, (current / max) * 100) : 0;
   contextBar.style.width = `${pct}%`;
+  updateContextThresholds(compression, max);
+}
+
+function updateContextThresholds(compression, max) {
+  const enabled = Boolean(compression.enabled && max > 0);
+  const reserveTokens = compression.reserve_tokens || 0;
+  const triggerTokens = compression.trigger_tokens || 0;
+
+  contextReserveMarker.classList.toggle("hidden", !enabled);
+  contextTriggerMarker.classList.toggle("hidden", !enabled);
+  if (enabled) {
+    contextReserveMarker.style.left = `${Math.min(100, (reserveTokens / max) * 100)}%`;
+    contextTriggerMarker.style.left = `${Math.min(100, (triggerTokens / max) * 100)}%`;
+  }
+
+  contextDetails.textContent = enabled
+    ? `Reserve ${formatNumber(reserveTokens)} · Trigger ${formatNumber(triggerTokens)}`
+    : "Compression off";
 }
 
 function setStatus(text) {
@@ -1003,6 +1131,13 @@ function compactTitle(title) {
 
 function formatNumber(value) {
   return new Intl.NumberFormat("en-US").format(value);
+}
+
+function formatPercent(value) {
+  if (value == null) {
+    return "0%";
+  }
+  return `${Math.round(Number(value) * 100)}%`;
 }
 
 function escapeHtml(value) {

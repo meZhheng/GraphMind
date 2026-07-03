@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import logging
+from typing import Any
 
 from agentscope.agent import Agent
 from agentscope.event import (
@@ -27,6 +29,7 @@ class AgentSession:
     agent: Agent = field(default_factory=build_code_agent)
     pending_confirmation: RequireUserConfirmEvent | None = None
     current_context_tokens: int = 0
+    last_model_input_tokens: int = 0
     is_running: bool = False
     last_event: str = "created"
     last_active_at: str = field(
@@ -35,9 +38,46 @@ class AgentSession:
 
     @property
     def context_payload(self) -> dict:
+        compression_settings = self.agent.state.middle_context.get(
+            "last_context_compression",
+            {},
+        )
+        compression_metrics = self.agent.state.middle_context.get(
+            "context_compression_metrics",
+            {},
+        )
+        estimated_tokens = self.agent.state.middle_context.get(
+            "current_context_tokens_estimate",
+        )
+        current_tokens = int(
+            estimated_tokens
+            if estimated_tokens is not None
+            else self.current_context_tokens,
+        )
+        max_tokens = int(self.agent.model.context_size)
+        trigger_ratio = self.agent.context_config.trigger_ratio
+        reserve_ratio = self.agent.context_config.reserve_ratio
         return {
-            "current_tokens": self.current_context_tokens,
-            "max_tokens": self.agent.model.context_size,
+            "current_tokens": current_tokens,
+            "last_model_input_tokens": self.last_model_input_tokens,
+            "max_tokens": max_tokens,
+            "compression": {
+                "enabled": bool(
+                    self.agent.state.middle_context.get(
+                        "context_compression_enabled",
+                        False,
+                    ),
+                ),
+                "trigger_ratio": trigger_ratio,
+                "reserve_ratio": reserve_ratio,
+                "trigger_tokens": int(trigger_ratio * max_tokens),
+                "reserve_tokens": int(reserve_ratio * max_tokens),
+                "tool_result_limit": self.agent.context_config.tool_result_limit,
+                "has_summary": bool(self.agent.state.summary),
+                "summary_chars": len(str(self.agent.state.summary or "")),
+                **compression_metrics,
+                **compression_settings,
+            },
         }
 
     @property
@@ -170,11 +210,49 @@ class AgentSession:
         confirmation_seen = False
         self.is_running = True
         self._touch("running")
+        event_queue: asyncio.Queue[tuple[str, Any]] = asyncio.Queue()
+
+        async def collect_agent_events() -> None:
+            try:
+                async for event in self.agent.reply_stream(next_input):
+                    await event_queue.put(("event", event))
+            except Exception as exc:  # pragma: no cover - re-raised below
+                await event_queue.put(("error", exc))
+            finally:
+                await event_queue.put(("done", None))
+
+        agent_task = asyncio.create_task(collect_agent_events())
         try:
-            async for event in self.agent.reply_stream(next_input):
+            agent_done = False
+            while not agent_done or not event_queue.empty():
+                for payload in self._drain_compression_payloads():
+                    yield payload
+
+                try:
+                    kind, item = await asyncio.wait_for(
+                        event_queue.get(),
+                        timeout=0.1,
+                    )
+                except TimeoutError:
+                    continue
+
+                for payload in self._drain_compression_payloads():
+                    yield payload
+
+                if kind == "done":
+                    agent_done = True
+                    continue
+                if kind == "error":
+                    raise item
+
+                event = item
                 self._touch(event)
                 if isinstance(event, ModelCallEndEvent):
                     self.current_context_tokens = event.input_tokens
+                    self.last_model_input_tokens = event.input_tokens
+                    self.agent.state.middle_context[
+                        "current_context_tokens_estimate"
+                    ] = event.input_tokens
 
                 if isinstance(event, RequireUserConfirmEvent):
                     event = self._merge_pending_confirmation(event)
@@ -208,7 +286,37 @@ class AgentSession:
                 "session_status": self.status_payload,
             }
         finally:
+            if not agent_task.done():
+                agent_task.cancel()
+                try:
+                    await agent_task
+                except asyncio.CancelledError:
+                    pass
+            for payload in self._drain_compression_payloads():
+                yield payload
             if not confirmation_seen:
                 self.pending_confirmation = None
                 self.is_running = False
                 self._touch("idle")
+
+    def _drain_compression_payloads(self) -> list[dict]:
+        events = self.agent.state.middle_context.get(
+            "context_compression_events",
+            [],
+        )
+        if not events:
+            return []
+
+        self.agent.state.middle_context["context_compression_events"] = []
+        payloads = []
+        for event in events:
+            payload = {
+                "type": event.get("category", "compression"),
+                "category": event.get("category", "compression"),
+                "title": event.get("title", "Context compression"),
+                "content": event.get("content", {}),
+                "context": self.context_payload,
+                "session_status": self.status_payload,
+            }
+            payloads.append(payload)
+        return payloads
