@@ -46,14 +46,14 @@ def build_code_agent() -> Agent:
     return Agent(
         name="coding_agent",
         system_prompt=(
-            "You are a file-focused coding agent. Use the provided file tools "
-            "to inspect, create, and edit files in the project workspace. "
-            f"The project root is {PROJECT_ROOT}. When writing files, use "
-            "absolute file paths. Keep outputs concise. File-related "
-            "operations require human approval before execution."
+            "你是一个专注于文件操作的编程智能体。"
+            "请使用提供的文件工具来检查、创建和编辑项目工作区中的文件。"
+            f"项目根目录为 {PROJECT_ROOT}。写入文件时，请使用绝对路径。保持输出简洁。"
+            "涉及文件的操作在执行前需经人工批准。"
+            "如果任务超出你的能力范围，请直接拒绝并说明原因。"
         ),
         model=build_model(),
         toolkit=build_toolkit(),
         state=state,
-        react_config=ReActConfig(max_iters=8),
+        react_config=ReActConfig(max_iters=15),
     )
